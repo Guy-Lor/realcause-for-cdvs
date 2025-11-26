@@ -1,0 +1,17 @@
+{
+  "metrics": {
+    "t_ks_pval": 1.368064511222293e-23,
+    "y_ks_pval": 2.1679290801380859e-38,
+    "t_es_pval": 1.0050285433471272e-35,
+    "y_es_pval": 4.346427578231076e-236,
+    "t_wasserstein1_dist": 0.37345680075763477,
+    "y_wasserstein1_dist": 15673.367409637827,
+    "wasserstein1 pval": 0.0,
+    "wasserstein2 pval": 0.0,
+    "Friedman-Rafsky pval": 0.0,
+    "kNN pval": 0.0,
+    "Energy pval": 0.0
+  },
+  "ate": -346.5528693131812,
+  "noisy_ate": -269.63609428047846
+}

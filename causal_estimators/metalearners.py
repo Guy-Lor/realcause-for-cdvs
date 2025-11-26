@@ -7,7 +7,7 @@ from causal_estimators.base import BaseEconMLEstimator
 class SLearner(BaseEconMLEstimator):
 
     def __init__(self, outcome_model=LinearRegression()):
-        super().__init__(econml.metalearners.SLearner(outcome_model))
+        super().__init__(econml.metalearners.SLearner(overall_model=outcome_model))
 
 
 class TLearner(BaseEconMLEstimator):
@@ -19,7 +19,7 @@ class TLearner(BaseEconMLEstimator):
             of models, with one for each value of treatment:
             (T=0 model, T=1 model, ...)
         """
-        super().__init__(econml.metalearners.TLearner(outcome_models))
+        super().__init__(econml.metalearners.TLearner(models=outcome_models))
 
 
 class XLearner(BaseEconMLEstimator):

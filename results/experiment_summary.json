@@ -1,0 +1,71 @@
+{
+  "experiment_config": {
+    "seeds": [
+      0,
+      1
+    ],
+    "num_variants": 3,
+    "r2_threshold": 0.1,
+    "initial_seed": 420
+  },
+  "results": {
+    "total_seeds": 2,
+    "successful_seeds": [
+      0,
+      1
+    ],
+    "failed_seeds": [],
+    "summary_by_seed": {
+      "0": {
+        "global_method_shape": [
+          1944,
+          11
+        ],
+        "global_method_best_shape": [
+          324,
+          11
+        ],
+        "variant_method_shape": [
+          1944,
+          12
+        ],
+        "variant_method_best_shape": [
+          324,
+          12
+        ],
+        "best_global_model": {
+          "estimator": "S-Learner (Linear)",
+          "ate_bias": 1422.6688196344053,
+          "mse": 146471228.01225904,
+          "r2": -0.014011943393007265
+        },
+        "best_models_count": 3
+      },
+      "1": {
+        "global_method_shape": [
+          1944,
+          11
+        ],
+        "global_method_best_shape": [
+          324,
+          11
+        ],
+        "variant_method_shape": [
+          1944,
+          12
+        ],
+        "variant_method_best_shape": [
+          324,
+          12
+        ],
+        "best_global_model": {
+          "estimator": "S-Learner (Linear)",
+          "ate_bias": 150.76613735659203,
+          "mse": 144469971.87007254,
+          "r2": -0.00015736145561895398
+        },
+        "best_models_count": 3
+      }
+    }
+  }
+}
