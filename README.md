@@ -55,7 +55,7 @@ This notebook transforms raw business process event logs into RealCause-compatib
 
 **Output**: `datasets/sepsis_cases.csv` - Clean dataset ready for causal analysis
 
-### 02_cdv_modeling_organized.ipynb
+### 02_cdv_modeling.ipynb
 **RealCause Model Training and Synthetic Data Generation**
 
 This notebook implements the core CDV methodology:
@@ -72,7 +72,7 @@ This notebook implements the core CDV methodology:
 
 **Output**: Model checkpoints and experimental results for causal analysis
 
-### 03_causal_analysis_organized.ipynb
+### 03_causal_analysis.ipynb
 **Results Analysis and Statistical Evaluation**
 
 This notebook provides analysis of the CDV approach effectiveness:
