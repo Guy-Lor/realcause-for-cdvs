@@ -479,4 +479,214 @@ def create_results_visualization_dashboard(ate_statistical_results, cate_statist
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
+
+
+# =============================================================================
+# SYNTHETIC EXPERIMENT VISUALIZATIONS
+# =============================================================================
+
+
+def plot_scissors_chart(results_by_alpha, metric='ate', save_path=None, figsize=(10, 6)):
+    """
+    Plot MSE vs heterogeneity (alpha) for Global vs CDV methods.
+    
+    Shows the "scissors" effect: as alpha increases, global model degrades
+    while CDV method remains stable, producing diverging lines.
+    
+    Parameters:
+    -----------
+    results_by_alpha : dict
+        Dictionary mapping alpha values to analysis results.
+        Each value should have keys: 'global_mse_per_seed', 'cdv_mse_per_seed'
+        (lists of per-seed MSE values).
+    metric : str
+        'ate' or 'cate' - which metric to plot
+    save_path : str, optional
+        Path to save the figure
+    figsize : tuple
+        Figure size
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    alphas = sorted(results_by_alpha.keys())
+    
+    global_means = []
+    global_cis = []
+    cdv_means = []
+    cdv_cis = []
+    
+    for alpha in alphas:
+        result = results_by_alpha[alpha]
+        
+        g_vals = np.array(result['global_mse_per_seed'])
+        c_vals = np.array(result['cdv_mse_per_seed'])
+        
+        global_means.append(np.mean(g_vals))
+        cdv_means.append(np.mean(c_vals))
+        
+        # 95% CI
+        n = len(g_vals)
+        global_cis.append(1.96 * np.std(g_vals) / np.sqrt(n))
+        cdv_cis.append(1.96 * np.std(c_vals) / np.sqrt(n))
+    
+    alphas = np.array(alphas)
+    global_means = np.array(global_means)
+    cdv_means = np.array(cdv_means)
+    global_cis = np.array(global_cis)
+    cdv_cis = np.array(cdv_cis)
+    
+    # Plot lines with CI bands
+    ax.plot(alphas, global_means, 'o-', color='#d62728', linewidth=2.5, markersize=8, label='Global Model')
+    ax.fill_between(alphas, global_means - global_cis, global_means + global_cis, 
+                    color='#d62728', alpha=0.15)
+    
+    ax.plot(alphas, cdv_means, 's-', color='#1f77b4', linewidth=2.5, markersize=8, label='CDV Model')
+    ax.fill_between(alphas, cdv_means - cdv_cis, cdv_means + cdv_cis,
+                    color='#1f77b4', alpha=0.15)
+    
+    ax.set_xlabel('Heterogeneity Level (α)', fontsize=13)
+    ax.set_ylabel(f'{metric.upper()} MSE', fontsize=13)
+    ax.set_title(f'{metric.upper()} MSE vs. Causal Heterogeneity', fontsize=14, fontweight='bold')
+    ax.legend(fontsize=12, framealpha=0.9)
+    ax.set_xticks(alphas)
+    ax.grid(True, alpha=0.3)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved to {save_path}")
+    
+    plt.show()
+
+
+def plot_four_alpha_comparison(ate_results_by_alpha, cate_results_by_alpha, save_path=None, figsize=(14, 10)):
+    """
+    Create a 2x2 panel figure comparing Global vs CDV across 4 alpha values.
+    
+    Top row: scissors plots (ATE left, CATE right)
+    Bottom row: bias-variance decomposition bars (ATE left, CATE right)
+    
+    Parameters:
+    -----------
+    ate_results_by_alpha : dict
+        {alpha: {'global_mse_per_seed': [...], 'cdv_mse_per_seed': [...],
+                 'global_bias_sq': float, 'global_variance': float,
+                 'cdv_bias_sq': float, 'cdv_variance': float}}
+    cate_results_by_alpha : dict
+        Same structure as ate_results_by_alpha
+    save_path : str, optional
+        Path to save the figure
+    figsize : tuple
+        Figure size
+    """
+    fig, axes = plt.subplots(2, 2, figsize=figsize)
+    
+    alphas = sorted(ate_results_by_alpha.keys())
+    
+    # --- Top Left: ATE Scissors ---
+    ax = axes[0, 0]
+    g_means, c_means, g_cis, c_cis = [], [], [], []
+    for alpha in alphas:
+        r = ate_results_by_alpha[alpha]
+        g_vals = np.array(r['global_mse_per_seed'])
+        c_vals = np.array(r['cdv_mse_per_seed'])
+        n = len(g_vals)
+        g_means.append(np.mean(g_vals))
+        c_means.append(np.mean(c_vals))
+        g_cis.append(1.96 * np.std(g_vals) / np.sqrt(n))
+        c_cis.append(1.96 * np.std(c_vals) / np.sqrt(n))
+    
+    ax.plot(alphas, g_means, 'o-', color='#d62728', linewidth=2, markersize=7, label='Global')
+    ax.fill_between(alphas, np.array(g_means) - np.array(g_cis), np.array(g_means) + np.array(g_cis),
+                    color='#d62728', alpha=0.15)
+    ax.plot(alphas, c_means, 's-', color='#1f77b4', linewidth=2, markersize=7, label='CDV')
+    ax.fill_between(alphas, np.array(c_means) - np.array(c_cis), np.array(c_means) + np.array(c_cis),
+                    color='#1f77b4', alpha=0.15)
+    ax.set_xlabel('α (heterogeneity)')
+    ax.set_ylabel('ATE MSE')
+    ax.set_title('ATE MSE vs. Heterogeneity', fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.set_xticks(alphas)
+    ax.grid(True, alpha=0.3)
+    
+    # --- Top Right: CATE Scissors ---
+    ax = axes[0, 1]
+    g_means, c_means, g_cis, c_cis = [], [], [], []
+    for alpha in alphas:
+        r = cate_results_by_alpha[alpha]
+        g_vals = np.array(r['global_mse_per_seed'])
+        c_vals = np.array(r['cdv_mse_per_seed'])
+        n = len(g_vals)
+        g_means.append(np.mean(g_vals))
+        c_means.append(np.mean(c_vals))
+        g_cis.append(1.96 * np.std(g_vals) / np.sqrt(n))
+        c_cis.append(1.96 * np.std(c_vals) / np.sqrt(n))
+    
+    ax.plot(alphas, g_means, 'o-', color='#d62728', linewidth=2, markersize=7, label='Global')
+    ax.fill_between(alphas, np.array(g_means) - np.array(g_cis), np.array(g_means) + np.array(g_cis),
+                    color='#d62728', alpha=0.15)
+    ax.plot(alphas, c_means, 's-', color='#1f77b4', linewidth=2, markersize=7, label='CDV')
+    ax.fill_between(alphas, np.array(c_means) - np.array(c_cis), np.array(c_means) + np.array(c_cis),
+                    color='#1f77b4', alpha=0.15)
+    ax.set_xlabel('α (heterogeneity)')
+    ax.set_ylabel('CATE MSE')
+    ax.set_title('CATE MSE vs. Heterogeneity', fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.set_xticks(alphas)
+    ax.grid(True, alpha=0.3)
+    
+    # --- Bottom Left: ATE Bias-Variance Decomposition ---
+    ax = axes[1, 0]
+    x = np.arange(len(alphas))
+    width = 0.35
+    
+    g_bias = [ate_results_by_alpha[a]['global_bias_sq'] for a in alphas]
+    g_var = [ate_results_by_alpha[a]['global_variance'] for a in alphas]
+    c_bias = [ate_results_by_alpha[a]['cdv_bias_sq'] for a in alphas]
+    c_var = [ate_results_by_alpha[a]['cdv_variance'] for a in alphas]
+    
+    ax.bar(x - width/2, g_bias, width, label='Global Bias²', color='#d62728', alpha=0.8)
+    ax.bar(x - width/2, g_var, width, bottom=g_bias, label='Global Variance', color='#d62728', alpha=0.4)
+    ax.bar(x + width/2, c_bias, width, label='CDV Bias²', color='#1f77b4', alpha=0.8)
+    ax.bar(x + width/2, c_var, width, bottom=c_bias, label='CDV Variance', color='#1f77b4', alpha=0.4)
+    
+    ax.set_xlabel('α (heterogeneity)')
+    ax.set_ylabel('ATE MSE Components')
+    ax.set_title('ATE Bias²-Variance Decomposition', fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels([f'{a:.2f}' for a in alphas])
+    ax.legend(fontsize=9, ncol=2)
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    # --- Bottom Right: CATE Bias-Variance Decomposition ---
+    ax = axes[1, 1]
+    
+    g_bias = [cate_results_by_alpha[a]['global_bias_sq'] for a in alphas]
+    g_var = [cate_results_by_alpha[a]['global_variance'] for a in alphas]
+    c_bias = [cate_results_by_alpha[a]['cdv_bias_sq'] for a in alphas]
+    c_var = [cate_results_by_alpha[a]['cdv_variance'] for a in alphas]
+    
+    ax.bar(x - width/2, g_bias, width, label='Global Bias²', color='#d62728', alpha=0.8)
+    ax.bar(x - width/2, g_var, width, bottom=g_bias, label='Global Variance', color='#d62728', alpha=0.4)
+    ax.bar(x + width/2, c_bias, width, label='CDV Bias²', color='#1f77b4', alpha=0.8)
+    ax.bar(x + width/2, c_var, width, bottom=c_bias, label='CDV Variance', color='#1f77b4', alpha=0.4)
+    
+    ax.set_xlabel('α (heterogeneity)')
+    ax.set_ylabel('CATE MSE Components')
+    ax.set_title('CATE Bias²-Variance Decomposition', fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels([f'{a:.2f}' for a in alphas])
+    ax.legend(fontsize=9, ncol=2)
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved to {save_path}")
+    
+    plt.show()
     plt.show()

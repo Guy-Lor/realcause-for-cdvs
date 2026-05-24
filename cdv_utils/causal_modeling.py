@@ -35,7 +35,7 @@ def group_by_variants_with_filtered_columns(df, num_variants=3):
         Information about each variant including size and pattern
     """
     # Identify feature columns (excluding outcome, treatment, and meta columns)
-    feature_cols = [col for col in df.columns if col not in ['t', 'y', 'y0', 'y1', 'ite', 'feature_pattern', 'variant']]
+    feature_cols = [col for col in df.columns if col not in ['t', 'y', 'y0', 'y1', 'ite', 'feature_pattern', 'variant', 'subgroup']]
     
     # Always include these essential columns
     essential_cols = ['t', 'y', 'y0', 'y1', 'ite']
@@ -108,7 +108,7 @@ def assign_variants_by_patterns(df, top_variants, k):
         Dataframe with assigned variants
     """
     # Get feature columns
-    feature_cols = [col for col in df.columns if col not in ['t', 'y', 'y0', 'y1', 'ite', 'variant','feature_pattern']]
+    feature_cols = [col for col in df.columns if col not in ['t', 'y', 'y0', 'y1', 'ite', 'variant', 'feature_pattern', 'subgroup']]
     print(feature_cols)
 
 
@@ -152,7 +152,7 @@ def process_test_data_with_training_variants(test_df, training_variant_patterns,
         Information about test variant assignments
     """
     # Get feature columns (same logic as training)
-    feature_cols = [col for col in test_df.columns if col not in ['t', 'y', 'y0', 'y1', 'ite', 'feature_pattern', 'variant']]
+    feature_cols = [col for col in test_df.columns if col not in ['t', 'y', 'y0', 'y1', 'ite', 'feature_pattern', 'variant', 'subgroup']]
     essential_cols = ['t', 'y', 'y0', 'y1', 'ite']
     
     # Calculate feature patterns for test data
@@ -311,7 +311,7 @@ def prepare_causal_data(variant_df):
         (X, t, y, feature_names) - features, treatment, outcome, feature column names
     """
     # Define columns to exclude
-    exclude_cols = ['t', 'y', 'y0', 'y1', 'ite', 'feature_pattern', 'variant']
+    exclude_cols = ['t', 'y', 'y0', 'y1', 'ite', 'feature_pattern', 'variant', 'subgroup']
     
     # Get feature columns
     feature_cols = [col for col in variant_df.columns if col not in exclude_cols]
