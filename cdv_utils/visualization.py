@@ -15,7 +15,7 @@ from matplotlib.lines import Line2D
 
 
 def plot_ate_bias_variance_tradeoff(ate_summary_df, best_estimator_name="Best Estimators Selection Per Seed", 
-                                   title_prefix="ATE", save_path=None):
+                                   title_prefix="ATE", save_path=None, show_s_learner_linear=True):
     """
     Create a single bias-variance scatter plot comparing global vs variant methods for ATE.
     Uses the ate summary dataframe from calculate_ate_by_estimator function.
@@ -26,11 +26,16 @@ def plot_ate_bias_variance_tradeoff(ate_summary_df, best_estimator_name="Best Es
     - best_estimator_name: Name of the best estimator to highlight
     - title_prefix: Prefix for the plot title (default: "ATE")
     - save_path: Optional path to save the plot
+    - show_s_learner_linear: Whether to include "S-learner (Linear)" in the plot
     """
     
     # Get global and variant data separately
     global_data = ate_summary_df[ate_summary_df['method'] == 'global'].copy()
     variant_data = ate_summary_df[ate_summary_df['method'] == 'variant'].copy()
+
+    if not show_s_learner_linear:
+        global_data = global_data[global_data['estimator'] != 'S-Learner (Linear)']
+        variant_data = variant_data[variant_data['estimator'] != 'S-Learner (Linear)']
     
     if len(global_data) == 0 or len(variant_data) == 0:
         print("Warning: Missing data for global or variant methods")
@@ -114,7 +119,7 @@ def plot_ate_bias_variance_tradeoff(ate_summary_df, best_estimator_name="Best Es
 
 
 def plot_cate_bias_variance_tradeoff(cate_summary_df, best_estimator_name="Best Estimators Selection Per Seed",
-                                    title_prefix="CATE", save_path=None):
+                                    title_prefix="CATE", save_path=None, show_s_learner_linear=True):
     """
     Create a single bias-variance scatter plot comparing global vs variant methods for CATE.
     Uses the cate summary dataframe from calculate_cate_by_estimator function.
@@ -125,11 +130,16 @@ def plot_cate_bias_variance_tradeoff(cate_summary_df, best_estimator_name="Best 
     - best_estimator_name: Name of the best estimator to highlight
     - title_prefix: Prefix for the plot title (default: "CATE")
     - save_path: Optional path to save the plot
+    - show_s_learner_linear: Whether to include "S-learner (Linear)" in the plot
     """
     
     # Get global and variant data separately
     global_data = cate_summary_df[cate_summary_df['method'] == 'global'].copy()
     variant_data = cate_summary_df[cate_summary_df['method'] == 'variant'].copy()
+
+    if not show_s_learner_linear:
+        global_data = global_data[global_data['estimator'] != 'S-Learner (Linear)']
+        variant_data = variant_data[variant_data['estimator'] != 'S-Learner (Linear)']
     
     if len(global_data) == 0 or len(variant_data) == 0:
         print("Warning: Missing data for global or variant methods")

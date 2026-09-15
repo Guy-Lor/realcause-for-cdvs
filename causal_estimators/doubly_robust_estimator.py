@@ -53,11 +53,10 @@ class DoublyRobustLearner(BaseEconMLEstimator):
     def __init__(self, outcome_model=LinearRegression(),
                  prop_score_model=LogisticRegression(),
                  final_model=LinearRegression(), trim_eps=1e-6,
-                 random_state=None):
-        # TODO: add other options that DRLearner allows?
+                 random_state=None, cv=1):
         drlearner = DRLearner(model_propensity=prop_score_model,
                               model_regression=outcome_model,
                               model_final=final_model, min_propensity=trim_eps,
                               random_state=random_state,
-                              cv=1)
+                              cv=cv)
         super().__init__(drlearner)

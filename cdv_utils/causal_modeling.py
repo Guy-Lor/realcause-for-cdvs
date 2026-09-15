@@ -7,6 +7,7 @@ including data preparation, model fitting, counterfactual prediction, and varian
 
 import numpy as np
 import pandas as pd
+import time
 from copy import deepcopy
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge
@@ -35,7 +36,7 @@ def group_by_variants_with_filtered_columns(df, num_variants=3):
         Information about each variant including size and pattern
     """
     # Identify feature columns (excluding outcome, treatment, and meta columns)
-    feature_cols = [col for col in df.columns if col not in ['t', 'y', 'y0', 'y1', 'ite', 'feature_pattern', 'variant', 'subgroup']]
+    feature_cols = [col for col in df.columns if col not in ['t', 'y', 'y0', 'y1', 'ite', 'feature_pattern', 'variant', 'subgroup', 'structural_subgroup']]
     
     # Always include these essential columns
     essential_cols = ['t', 'y', 'y0', 'y1', 'ite']
@@ -108,7 +109,7 @@ def assign_variants_by_patterns(df, top_variants, k):
         Dataframe with assigned variants
     """
     # Get feature columns
-    feature_cols = [col for col in df.columns if col not in ['t', 'y', 'y0', 'y1', 'ite', 'variant', 'feature_pattern', 'subgroup']]
+    feature_cols = [col for col in df.columns if col not in ['t', 'y', 'y0', 'y1', 'ite', 'variant', 'feature_pattern', 'subgroup', 'structural_subgroup']]
     print(feature_cols)
 
 
@@ -152,7 +153,7 @@ def process_test_data_with_training_variants(test_df, training_variant_patterns,
         Information about test variant assignments
     """
     # Get feature columns (same logic as training)
-    feature_cols = [col for col in test_df.columns if col not in ['t', 'y', 'y0', 'y1', 'ite', 'feature_pattern', 'variant', 'subgroup']]
+    feature_cols = [col for col in test_df.columns if col not in ['t', 'y', 'y0', 'y1', 'ite', 'feature_pattern', 'variant', 'subgroup', 'structural_subgroup']]
     essential_cols = ['t', 'y', 'y0', 'y1', 'ite']
     
     # Calculate feature patterns for test data
@@ -218,7 +219,7 @@ def process_test_data_with_training_variants(test_df, training_variant_patterns,
     return test_variant_dataframes, test_variant_info_df
 
 
-def setup_causal_estimators(seed=42):
+def setup_causal_estimators(seed=42, rf_n_jobs=-1):
     """
     Set up causal inference estimators for experiments.
     
@@ -226,6 +227,9 @@ def setup_causal_estimators(seed=42):
     -----------
     seed : int
         Random seed for reproducibility
+    rf_n_jobs : int
+        Number of parallel jobs for RandomForest models. Use -1 to use all
+        available CPU cores.
         
     Returns:
     --------
@@ -238,8 +242,8 @@ def setup_causal_estimators(seed=42):
     from causal_estimators.double_ml import DoubleML
     
     # Base models
-    rf_reg = RandomForestRegressor(n_estimators=50, random_state=seed)
-    rf_clf = RandomForestClassifier(n_estimators=50, random_state=seed)
+    rf_reg = RandomForestRegressor(n_estimators=50, random_state=seed, n_jobs=rf_n_jobs)
+    rf_clf = RandomForestClassifier(n_estimators=50, random_state=seed, n_jobs=rf_n_jobs)
     ridge = Ridge(alpha=1.0, random_state=seed)
     
     estimators = {
@@ -311,7 +315,7 @@ def prepare_causal_data(variant_df):
         (X, t, y, feature_names) - features, treatment, outcome, feature column names
     """
     # Define columns to exclude
-    exclude_cols = ['t', 'y', 'y0', 'y1', 'ite', 'feature_pattern', 'variant', 'subgroup']
+    exclude_cols = ['t', 'y', 'y0', 'y1', 'ite', 'feature_pattern', 'variant', 'subgroup', 'structural_subgroup']
     
     # Get feature columns
     feature_cols = [col for col in variant_df.columns if col not in exclude_cols]
@@ -324,7 +328,7 @@ def prepare_causal_data(variant_df):
     return X, t, y, feature_cols
 
 
-def fit_estimator(estimator, X, t, y):
+def fit_estimator(estimator, X, t, y, estimator_name=None):
     """
     Fit a causal estimator to training data.
     
@@ -338,6 +342,8 @@ def fit_estimator(estimator, X, t, y):
         Treatment vector
     y : numpy.ndarray
         Outcome vector
+    estimator_name : str, optional
+        Name used in timing logs.
         
     Returns:
     --------
@@ -360,7 +366,11 @@ def fit_estimator(estimator, X, t, y):
             raise ValueError(f"Array length mismatch: X={X.shape[0]}, t={len(t)}, y={len(y)}")
         
         # Fit the estimator
+        start_time = time.perf_counter()
         estimator.fit(X, t, y)
+        elapsed = time.perf_counter() - start_time
+        display_name = estimator_name or estimator.__class__.__name__
+        print(f"Fitted {display_name} on {X.shape[0]} rows, {X.shape[1]} features in {elapsed:.2f}s")
         
         return estimator
         
@@ -369,7 +379,7 @@ def fit_estimator(estimator, X, t, y):
         return None
 
 
-def predict_counterfactuals(fitted_estimator, X, t, y):
+def predict_counterfactuals(fitted_estimator, X, t, y, estimator_name=None):
     """
     Generate counterfactual predictions using a fitted estimator.
     
@@ -383,6 +393,8 @@ def predict_counterfactuals(fitted_estimator, X, t, y):
         Treatment vector for prediction
     y : numpy.ndarray
         Outcome vector for prediction
+    estimator_name : str, optional
+        Name used in timing logs.
         
     Returns:
     --------
@@ -405,8 +417,13 @@ def predict_counterfactuals(fitted_estimator, X, t, y):
             raise ValueError(f"Array length mismatch: X={X.shape[0]}, t={len(t)}, y={len(y)}")
         
         # Generate predictions for both treatment conditions
+        start_time = time.perf_counter()
         y0_pred = fitted_estimator.predict_outcome(X, np.zeros_like(t))  # Control
         y1_pred = fitted_estimator.predict_outcome(X, np.ones_like(t))   # Treatment
+        elapsed = time.perf_counter() - start_time
+        if elapsed >= 0.5:
+            display_name = estimator_name or fitted_estimator.__class__.__name__
+            print(f"Predicted {display_name} counterfactuals for {X.shape[0]} rows in {elapsed:.2f}s")
         
         # Ensure predictions are 1D
         if hasattr(y0_pred, 'flatten'):
@@ -495,8 +512,11 @@ def fit_and_predict_all_estimators(variant_dataframes, test_variant_dataframes,
     return fitted_estimators, all_variant_results
 
 
-def select_best_model_per_variant(all_variant_val_results, val_variant_dataframes, 
-                                 variants_to_skip=None, r2_threshold=0.2):
+def select_best_model_per_variant(all_variant_val_results, val_variant_dataframes,
+                                  variants_to_skip=None, r2_threshold=0.2,
+                                  selection_metric='ate_bias',
+                                  validation_effects_by_variant=None,
+                                  use_r2_threshold=True):
     """
     Select the best model per variant based on validation data.
     
@@ -510,6 +530,15 @@ def select_best_model_per_variant(all_variant_val_results, val_variant_dataframe
         Variants that should use global model
     r2_threshold : float
         Minimum R² threshold for heterogeneity
+    selection_metric : str
+        Validation metric to minimize when choosing among estimators. Supported
+        values are 'ate_bias', 'ate_mse', 'mse', and 'pehe'.
+    validation_effects_by_variant : dict, optional
+        Conditional-effect validation targets aligned with each variant frame.
+        When omitted, the legacy ``ite`` column is used.
+    use_r2_threshold : bool
+        Whether to filter candidates by ``r2_threshold`` before minimizing the
+        requested error metric.
         
     Returns:
     --------
@@ -518,6 +547,11 @@ def select_best_model_per_variant(all_variant_val_results, val_variant_dataframe
     """
     if variants_to_skip is None:
         variants_to_skip = []
+    supported_metrics = {'ate_bias', 'ate_mse', 'mse', 'pehe'}
+    if selection_metric not in supported_metrics:
+        raise ValueError(
+            f"selection_metric must be one of {sorted(supported_metrics)}"
+        )
     
     best_models_per_variant = {}
     
@@ -526,8 +560,11 @@ def select_best_model_per_variant(all_variant_val_results, val_variant_dataframe
             best_models_per_variant[variant_num] = {
                 'estimator': "best_global_model",
                 'ate_bias': None,
+                'ate_mse': None,
                 'mse': None,
-                'r2': None
+                'pehe': None,
+                'r2': None,
+                'selection_metric': selection_metric
             }
             continue
         
@@ -539,7 +576,17 @@ def select_best_model_per_variant(all_variant_val_results, val_variant_dataframe
         
         for estimator_name, results_df in all_variant_val_results[variant_num].items():
             ite_pred = results_df['ite_pred'].values
-            ite_real = val_df['ite'].values
+            if validation_effects_by_variant is None:
+                ite_real = val_df['ite'].values
+            else:
+                ite_real = np.asarray(
+                    validation_effects_by_variant[variant_num]
+                ).reshape(-1)
+            if len(ite_pred) != len(ite_real):
+                raise ValueError(
+                    f"Variant {variant_num} has {len(ite_pred)} validation "
+                    f"predictions but {len(ite_real)} validation effects."
+                )
             
             # Calculate metrics
             ate_bias = abs(np.mean(ite_pred) - np.mean(ite_real))
@@ -548,36 +595,43 @@ def select_best_model_per_variant(all_variant_val_results, val_variant_dataframe
             
             estimator_scores[estimator_name] = {
                 'ate_bias': ate_bias,
+                'ate_mse': ate_bias ** 2,
                 'mse': ite_mse,
+                'pehe': np.sqrt(ite_mse),
                 'r2': ite_r2
             }
         
-        # Select best estimator using R² threshold + ATE bias minimization
+        # Select best estimator using R² threshold + requested validation metric.
         if estimator_scores:
             # Filter: keep models with R² > threshold
-            valid_models = {k: v for k, v in estimator_scores.items() if v['r2'] > r2_threshold}
+            valid_models = {
+                k: v for k, v in estimator_scores.items()
+                if v['r2'] > r2_threshold
+            } if use_r2_threshold else estimator_scores
             
             if valid_models:
-                # Among valid models, select lowest ATE bias
-                best_estimator = min(valid_models.items(), key=lambda x: x[1]['ate_bias'])[0]
+                # Among valid models, select the lowest requested validation metric.
+                best_estimator = min(valid_models.items(), key=lambda x: x[1][selection_metric])[0]
                 best_metrics = valid_models[best_estimator]
             else:
-                # Fallback: use lowest ATE bias anyway
-                best_estimator = min(estimator_scores.items(), key=lambda x: x[1]['ate_bias'])[0]
+                # Fallback: use the requested validation metric anyway.
+                best_estimator = min(estimator_scores.items(), key=lambda x: x[1][selection_metric])[0]
                 best_metrics = estimator_scores[best_estimator]
             
             best_models_per_variant[variant_num] = {
                 'estimator': best_estimator,
-                'ate_bias': best_metrics['ate_bias'],
-                'mse': best_metrics['mse'],
-                'r2': best_metrics['r2']
+                **best_metrics,
+                'selection_metric': selection_metric
             }
         else:
             best_models_per_variant[variant_num] = {
                 'estimator': "best_global_model",
                 'ate_bias': None,
+                'ate_mse': None,
                 'mse': None,
-                'r2': None
+                'pehe': None,
+                'r2': None,
+                'selection_metric': selection_metric
             }
     
     return best_models_per_variant

@@ -5,6 +5,12 @@
 ihdp*.npz*
 GenModelCkpts/
 
+# Generated experiment artifacts / results
+cdv_experiments/*/artifacts/*
+!cdv_experiments/*/artifacts/.gitkeep
+results/*
+!results/.gitkeep
+
 # Mac files
 .DS_Store
 

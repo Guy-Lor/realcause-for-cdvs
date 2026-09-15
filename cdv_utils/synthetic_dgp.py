@@ -3,7 +3,13 @@ Synthetic Data Generating Process (DGP) for CDV Evaluation
 
 This module provides a fully controlled DGP with:
 - 6 sub-groups (3 main variants covering >85% + 3 minor ones in "others" bucket)
+- SG0 is split into two latent structural sub-groups with the same observed features
 - Per-variant causal structure (different features, propensity, treatment effects)
+- Cross-variant treatment-effect surfaces with conflicting feature meanings, so
+  the global model must learn variant-by-feature interactions while CDV models
+  learn local response surfaces directly
+- SG0 latent mechanisms share one propensity function of the observed history, so
+  treatment assignment is independent of the latent mechanism conditional on S
 - A heterogeneity parameter alpha in [0, 1] that controls how different the variants are
 - Known ground-truth CATE for every case
 
@@ -30,6 +36,14 @@ SUBGROUP_FEATURES = {
 # Population shares for 6 sub-groups (top 3 sum to 87%)
 DEFAULT_VARIANT_SHARES = (0.40, 0.30, 0.17, 0.05, 0.04, 0.04)
 
+# SG0 is one observed CDV feature pattern, but it contains two latent clinical
+# mechanisms that reach the decision point with the same feature set. The two
+# mechanisms intentionally share the same treatment propensity below; they differ
+# in feature-generation, baseline-outcome, and treatment-effect equations. This
+# matches the latent-iCGraph assumption G independent of D given observed history S.
+SG0_STRUCTURAL_SUBGROUPS = ('SG0a', 'SG0b')
+DEFAULT_SG0_STRUCTURAL_SHARES = (0.5, 0.5)
+
 # All feature columns in fixed order
 ALL_W_COLS = ['X1', 'X2', 'V', 'E', 'Z1', 'Z2']
 
@@ -45,7 +59,7 @@ def _sigmoid(x):
     return 1.0 / (1.0 + np.exp(-np.clip(x, -500, 500)))
 
 
-def _generate_features_for_subgroup(subgroup_id, X1, X2, rng):
+def _generate_features_for_subgroup(subgroup_id, X1, X2, rng, structural_subgroup=None):
     """
     Generate variant-specific features given shared features X1, X2.
     
@@ -58,9 +72,16 @@ def _generate_features_for_subgroup(subgroup_id, X1, X2, rng):
     features = {}
     
     if subgroup_id == 0:
-        # Variant 1: V depends on X1+X2, Z1 depends on X1
-        features['V'] = np.abs(rng.normal(X1 + 0.5 * X2, 1.0))
-        features['Z1'] = np.abs(rng.normal(0.3 * X1 + 1.0, 0.8))
+        if structural_subgroup == 'SG0b':
+            # SG0b: lab-first pathway. X1 and X2 drive Z1, then Z1 drives V.
+            # Graph: X1 -> Z1, X2 -> Z1, Z1 -> V, X2 -> V.
+            features['Z1'] = np.abs(rng.normal(0.8 * X1 + 1.1 * X2 + 0.5, 0.7))
+            features['V'] = np.abs(rng.normal(0.6 * features['Z1'] + 0.4 * X2 + 0.2, 0.8))
+        else:
+            # SG0a: vital-first pathway. X1 and X2 drive V, then V drives Z1.
+            # Graph: X1 -> V, X2 -> V, V -> Z1, X1 -> Z1.
+            features['V'] = np.abs(rng.normal(0.9 * X1 + 0.6 * X2, 1.0))
+            features['Z1'] = np.abs(rng.normal(0.7 * features['V'] + 0.2 * X1 + 0.5, 0.7))
         
     elif subgroup_id == 1:
         # Variant 2: E depends on X1, V depends on X1 + 0.3*E (E causes V)
@@ -92,13 +113,20 @@ def _generate_features_for_subgroup(subgroup_id, X1, X2, rng):
     return features
 
 
-def _propensity_for_subgroup(subgroup_id, X1, X2, features):
+def _propensity_for_subgroup(subgroup_id, X1, X2, features, structural_subgroup=None):
     """
     Compute P(D=1 | features) for a given sub-group.
-    Each sub-group has different confounding structure.
+
+    Most observed sub-groups have different decision rules. SG0 is the exception:
+    its latent mechanisms SG0a and SG0b use the same propensity function of the
+    observed history (X1, X2, V, Z1). The latent structural label is therefore
+    not an additional treatment-selection variable once S is observed.
     """
     if subgroup_id == 0:
-        logit = -0.5 + 0.4 * features['V'] - 0.3 * X1 + 0.2 * features['Z1']
+        # Shared SG0 decision rule. Both SG0a (vital-first) and SG0b (lab-first)
+        # may produce different V/Z1 values, but conditional on those observed
+        # values the decision probability does not depend on the latent mechanism.
+        logit = -0.75 + 0.35 * features['V'] + 0.25 * features['Z1'] - 0.20 * X1 + 0.30 * X2
     elif subgroup_id == 1:
         logit = -0.3 + 0.3 * features['E'] + 0.2 * features['V'] - 0.2 * X1
     elif subgroup_id == 2:
@@ -113,13 +141,16 @@ def _propensity_for_subgroup(subgroup_id, X1, X2, features):
     return _sigmoid(logit)
 
 
-def _baseline_outcome_for_subgroup(subgroup_id, X1, X2, features):
+def _baseline_outcome_for_subgroup(subgroup_id, X1, X2, features, structural_subgroup=None):
     """
     Compute baseline outcome Y(0) = f(features) + noise for a given sub-group.
     Different sub-groups have different outcome functions.
     """
     if subgroup_id == 0:
-        baseline = 50.0 + 3.0 * X1 + 2.0 * features['V'] + 1.5 * features['Z1']
+        if structural_subgroup == 'SG0b':
+            baseline = 49.0 + 2.4 * X1 + 1.1 * features['V'] + 2.4 * features['Z1'] + 1.0 * X2
+        else:
+            baseline = 50.0 + 3.0 * X1 + 2.0 * features['V'] + 1.5 * features['Z1']
     elif subgroup_id == 1:
         baseline = 45.0 + 2.5 * X1 + 2.0 * features['E'] + 1.8 * features['V']
     elif subgroup_id == 2:
@@ -134,7 +165,7 @@ def _baseline_outcome_for_subgroup(subgroup_id, X1, X2, features):
     return baseline
 
 
-def _treatment_effect_for_subgroup(subgroup_id, alpha, X1, X2, features):
+def _treatment_effect_for_subgroup(subgroup_id, alpha, X1, X2, features, structural_subgroup=None):
     """
     Compute heterogeneous treatment effect tau(features) for a given sub-group.
     
@@ -143,31 +174,44 @@ def _treatment_effect_for_subgroup(subgroup_id, alpha, X1, X2, features):
     At alpha=0: tau = TAU_BASE (constant for all, no heterogeneity)
     At alpha=1: tau varies by variant and features (full heterogeneity)
     
-    Each sub-group uses a different nonlinear function delta_v.
+    Each observed sub-group uses a different nonlinear function delta_v. The
+    main heterogeneity is cross-variant: shared-looking measurements can have
+    opposite treatment-effect meanings across process paths. This creates a fair
+    global-vs-CDV comparison because the global model sees the same encoded
+    feature table, but must infer variant-by-feature interactions from sentinel
+    missingness patterns.
     """
     if subgroup_id == 0:
-        # delta_1: quadratic in V
-        delta = 3.0 * (features['V'] - 2.0) ** 2 - 4.0 + 1.5 * features['Z1']
+        if structural_subgroup == 'SG0b':
+            # SG0b: lab-first pathway. Same observed CDV as SG0a, but the lab
+            # panel moderates the vital-sign effect through a local interaction.
+            delta = 1.8 * features['V'] + 1.4 * features['Z1'] + 0.6 * features['V'] * features['Z1'] / 3.0 - 5.0
+        else:
+            # SG0a: vital-first pathway. High V means higher treatment benefit.
+            delta = 2.8 * features['V'] + 1.2 * features['Z1'] - 6.0
     elif subgroup_id == 1:
-        # delta_2: interaction E * V
-        delta = 2.0 * features['E'] * features['V'] / 3.0 - 5.0
+        # SG1: ECG + vitals pathway. V has the opposite effect sign from SG0,
+        # so global pooling must learn a path-specific V effect.
+        delta = -2.8 * features['V'] + 2.6 * features['E'] + 0.7 * features['E'] * features['V'] / 3.0 + 2.0
     elif subgroup_id == 2:
-        # delta_3: sinusoidal in V + linear in E
-        delta = 4.0 * np.sin(features['V']) + 2.0 * features['E'] - 3.0 * features['Z2']
+        # SG2: complex pathway. Nonlinear V and negative E combine with Z2;
+        # this differs from both SG0 and SG1 even though V/E are observed.
+        delta = 3.5 * np.sin(features['V']) - 2.4 * features['E'] + 3.0 * features['Z2'] + 1.0 * X2
     elif subgroup_id == 3:
-        # delta_4: product Z1*Z2
-        delta = 2.5 * features['Z1'] * features['Z2'] / 2.0 - 3.0
+        # SG3: others bucket, lab-specialty interaction.
+        delta = 1.8 * features['Z1'] * features['Z2'] / 2.0 - 2.0
     elif subgroup_id == 4:
-        # delta_5: E squared minus Z1
-        delta = 1.5 * features['E'] ** 2 / 3.0 - 2.0 * features['Z1']
+        # SG4: others bucket, ECG signal offsets lab severity.
+        delta = 1.2 * features['E'] ** 2 / 3.0 - 2.2 * features['Z1'] + 1.0
     elif subgroup_id == 5:
-        # delta_6: V + Z1 - Z2 interaction
-        delta = 2.0 * features['V'] - 1.5 * features['Z1'] + features['Z2']
+        # SG5: others bucket, vitals and specialty are beneficial while labs
+        # partially reverse the effect.
+        delta = 2.2 * features['V'] - 1.8 * features['Z1'] + 2.0 * features['Z2']
     
     return TAU_BASE + alpha * delta
 
 
-def generate_synthetic_dataset(n, alpha, seed, variant_shares=None):
+def generate_synthetic_dataset(n, alpha, seed, variant_shares=None, sg0_structural_shares=None):
     """
     Generate a fully synthetic dataset with controlled causal heterogeneity.
     
@@ -184,6 +228,9 @@ def generate_synthetic_dataset(n, alpha, seed, variant_shares=None):
     variant_shares : tuple of 6 floats, optional
         Population share for each of the 6 sub-groups (must sum to 1).
         Default: (0.40, 0.30, 0.17, 0.05, 0.04, 0.04)
+    sg0_structural_shares : tuple of 2 floats, optional
+        Relative split of SG0 into SG0a and SG0b. Both mechanisms expose the
+        same observed feature set: X1, X2, V, Z1.
         
     Returns
     -------
@@ -193,15 +240,27 @@ def generate_synthetic_dataset(n, alpha, seed, variant_shares=None):
     """
     if variant_shares is None:
         variant_shares = DEFAULT_VARIANT_SHARES
+    if sg0_structural_shares is None:
+        sg0_structural_shares = DEFAULT_SG0_STRUCTURAL_SHARES
     
     assert len(variant_shares) == 6, "Must provide 6 sub-group shares"
     assert abs(sum(variant_shares) - 1.0) < 1e-6, "Shares must sum to 1"
+    assert len(sg0_structural_shares) == 2, "Must provide 2 SG0 structural shares"
+    assert abs(sum(sg0_structural_shares) - 1.0) < 1e-6, "SG0 structural shares must sum to 1"
     assert 0.0 <= alpha <= 1.0, "alpha must be in [0, 1]"
     
     rng = np.random.default_rng(seed)
     
     # Step 1: Assign sub-groups
     subgroups = rng.choice(6, size=n, p=variant_shares)
+    structural_subgroups = np.array([f'SG{sg}' for sg in subgroups], dtype=object)
+    sg0_mask = subgroups == 0
+    if sg0_mask.any():
+        structural_subgroups[sg0_mask] = rng.choice(
+            SG0_STRUCTURAL_SUBGROUPS,
+            size=sg0_mask.sum(),
+            p=sg0_structural_shares
+        )
     
     # Step 2: Generate shared features
     X1 = rng.uniform(0, 5, size=n)
@@ -228,6 +287,37 @@ def generate_synthetic_dataset(n, alpha, seed, variant_shares=None):
         X2_sg = X2[mask]
         
         # Generate features
+        structural_sg = None
+        if sg == 0:
+            structural_sg = structural_subgroups[mask]
+            unique_structural_sg = np.unique(structural_sg)
+            for sg0_mechanism in unique_structural_sg:
+                mechanism_mask = mask.copy()
+                mechanism_mask[mask] = structural_sg == sg0_mechanism
+                X1_mech = X1[mechanism_mask]
+                X2_mech = X2[mechanism_mask]
+                feat_mech = _generate_features_for_subgroup(
+                    sg, X1_mech, X2_mech, rng, structural_subgroup=sg0_mechanism
+                )
+                if 'V' in feat_mech:
+                    V[mechanism_mask] = feat_mech['V']
+                if 'E' in feat_mech:
+                    E[mechanism_mask] = feat_mech['E']
+                if 'Z1' in feat_mech:
+                    Z1[mechanism_mask] = feat_mech['Z1']
+                if 'Z2' in feat_mech:
+                    Z2[mechanism_mask] = feat_mech['Z2']
+                propensity[mechanism_mask] = _propensity_for_subgroup(
+                    sg, X1_mech, X2_mech, feat_mech, structural_subgroup=sg0_mechanism
+                )
+                y0[mechanism_mask] = _baseline_outcome_for_subgroup(
+                    sg, X1_mech, X2_mech, feat_mech, structural_subgroup=sg0_mechanism
+                )
+                tau[mechanism_mask] = _treatment_effect_for_subgroup(
+                    sg, alpha, X1_mech, X2_mech, feat_mech, structural_subgroup=sg0_mechanism
+                )
+            continue
+
         feat = _generate_features_for_subgroup(sg, X1_sg, X2_sg, rng)
         
         # Fill feature arrays
@@ -275,6 +365,7 @@ def generate_synthetic_dataset(n, alpha, seed, variant_shares=None):
         'y1': y1,
         'ite': ite,
         'subgroup': subgroups,
+        'structural_subgroup': structural_subgroups,
     })
     
     return df
@@ -290,7 +381,10 @@ def generate_counterfactuals_for_fixed_features(df_features, alpha, seed):
     Parameters
     ----------
     df_features : pd.DataFrame
-        DataFrame with columns X1, X2, V, E, Z1, Z2, subgroup
+        DataFrame with columns X1, X2, V, E, Z1, Z2, subgroup.
+        If present, structural_subgroup is used to preserve the latent SG0a/SG0b
+        mechanism. Otherwise all SG0 rows default to SG0a for backward
+        compatibility.
     alpha : float
         Heterogeneity parameter in [0, 1]
     seed : int
@@ -311,6 +405,11 @@ def generate_counterfactuals_for_fixed_features(df_features, alpha, seed):
     Z1 = df_features['Z1'].values
     Z2 = df_features['Z2'].values
     subgroups = df_features['subgroup'].values
+    if 'structural_subgroup' in df_features.columns:
+        structural_subgroups = df_features['structural_subgroup'].values
+    else:
+        structural_subgroups = np.array([f'SG{sg}' for sg in subgroups], dtype=object)
+        structural_subgroups[subgroups == 0] = 'SG0a'
     
     propensity = np.zeros(n)
     y0 = np.zeros(n)
@@ -325,6 +424,29 @@ def generate_counterfactuals_for_fixed_features(df_features, alpha, seed):
         X1_sg = X1[mask]
         X2_sg = X2[mask]
         
+        if sg == 0:
+            structural_sg = structural_subgroups[mask]
+            for sg0_mechanism in np.unique(structural_sg):
+                mechanism_mask = mask.copy()
+                mechanism_mask[mask] = structural_sg == sg0_mechanism
+                feat = {
+                    'V': V[mechanism_mask],
+                    'Z1': Z1[mechanism_mask],
+                }
+                propensity[mechanism_mask] = _propensity_for_subgroup(
+                    sg, X1[mechanism_mask], X2[mechanism_mask], feat,
+                    structural_subgroup=sg0_mechanism
+                )
+                y0[mechanism_mask] = _baseline_outcome_for_subgroup(
+                    sg, X1[mechanism_mask], X2[mechanism_mask], feat,
+                    structural_subgroup=sg0_mechanism
+                )
+                tau[mechanism_mask] = _treatment_effect_for_subgroup(
+                    sg, alpha, X1[mechanism_mask], X2[mechanism_mask], feat,
+                    structural_subgroup=sg0_mechanism
+                )
+            continue
+
         # Reconstruct feature dict from stored values
         feat = {}
         present_features = SUBGROUP_FEATURES[sg]

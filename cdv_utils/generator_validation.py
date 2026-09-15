@@ -406,6 +406,108 @@ def generate_synthetic_data(model, seed=42, dataset='train'):
     return w, t, y0, y1
 
 
+def estimate_sigmoid_flow_cate(model, w_untransformed, n_quantiles=128,
+                               batch_rows=16):
+    """Estimate conditional-mean CATE with deterministic inverse-CDF quadrature.
+
+    RealCause's ``SigmoidFlow.mean`` is not implemented, so a single sampled
+    potential-outcome contrast is not a valid CATE target.  This helper
+    integrates both fitted potential-outcome distributions over a fixed
+    midpoint quantile grid and returns ``E[Y(1)|X] - E[Y(0)|X]`` on the original
+    outcome scale.
+    """
+    from models.distributions.flows import sigmoid_flow_inverse
+
+    distribution = model.outcome_distribution
+    if distribution.__class__.__name__ != "SigmoidFlow":
+        raise TypeError(
+            "estimate_sigmoid_flow_cate is specific to a SigmoidFlow outcome "
+            "distribution."
+        )
+    if n_quantiles < 1:
+        raise ValueError("n_quantiles must be positive.")
+    if batch_rows < 1:
+        raise ValueError("batch_rows must be positive.")
+
+    w_untransformed = np.asarray(w_untransformed)
+    w_transformed = model.w_transform.transform(w_untransformed)
+    t_placeholder = np.zeros((len(w_transformed), 1), dtype=np.float32)
+    wt = torch.from_numpy(
+        np.concatenate([w_transformed, t_placeholder], axis=1)
+    ).float()
+
+    networks = list(getattr(model, "networks", []))
+    if networks:
+        first_parameter = next(networks[0].parameters(), None)
+        if first_parameter is not None:
+            wt = wt.to(first_parameter.device)
+    training_states = [network.training for network in networks]
+    try:
+        for network in networks:
+            network.eval()
+        with torch.no_grad():
+            y0_params, y1_params = model.mlp_y_tw(
+                wt, ret_counterfactuals=True
+            )
+            y0_params = y0_params.detach()
+            y1_params = y1_params.detach()
+    finally:
+        for network, was_training in zip(networks, training_states):
+            network.train(was_training)
+
+    quantiles = (
+        (
+            torch.arange(
+                n_quantiles,
+                dtype=torch.float32,
+                device=y0_params.device,
+            )
+            + 0.5
+        )
+        / n_quantiles
+    ).reshape(1, n_quantiles, 1)
+
+    def integrate_parameters(parameters):
+        means = []
+        parameter_dim = parameters.shape[1]
+        output_dim = parameter_dim // (distribution.ndim * 3)
+
+        for start in range(0, len(parameters), batch_rows):
+            parameter_batch = parameters[start:start + batch_rows]
+            batch_size = len(parameter_batch)
+            expanded_parameters = (
+                parameter_batch[:, None, :]
+                .expand(batch_size, n_quantiles, parameter_dim)
+                .reshape(batch_size * n_quantiles, output_dim, -1)
+            )
+            target_quantiles = (
+                quantiles
+                .expand(batch_size, n_quantiles, output_dim)
+                .reshape(batch_size * n_quantiles, output_dim)
+            )
+            samples = sigmoid_flow_inverse(
+                target_quantiles,
+                ndim=distribution.ndim,
+                params=expanded_parameters,
+                logit_end=distribution.logit_end,
+                tol=1e-3,
+                max_iter=100,
+                lr=0.1,
+            )
+            means.append(
+                samples.detach().cpu().numpy()
+                .reshape(batch_size, n_quantiles, output_dim)
+                .mean(axis=1)
+            )
+        return np.concatenate(means, axis=0)
+
+    mu0_transformed = integrate_parameters(y0_params)
+    mu1_transformed = integrate_parameters(y1_params)
+    mu0 = model.y_transform.untransform(mu0_transformed).reshape(-1)
+    mu1 = model.y_transform.untransform(mu1_transformed).reshape(-1)
+    return mu1 - mu0
+
+
 def create_dataframe_from_synthetic_data(w, t, y0, y1, w_cols):
     """
     Create a pandas DataFrame from synthetic data arrays.

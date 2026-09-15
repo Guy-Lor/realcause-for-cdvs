@@ -140,27 +140,16 @@ class BaseEconMLEstimator(BaseIteEstimator):
         elif hasattr(t, 'shape') and len(t.shape) == 0:
             t = np.array([t])
         
-        # For newer EconML API, try to use the effect method to predict outcomes
+        # For newer EconML API, use the vectorized effect method to predict outcomes.
         try:
-            # Get baseline outcome (control group estimate)
-            y0_pred = np.zeros(len(t))  # Initialize
-            y1_pred = np.zeros(len(t))  # Initialize
-            
-            # Try to use the effect method with different treatments
-            if hasattr(self.econml_estimator, 'effect'):
-                # For each sample, predict both potential outcomes
-                for i in range(len(t)):
-                    w_i = w[i:i+1] if len(w.shape) > 1 else w.reshape(1, -1)
-                    
-                    # Estimate treatment effect
-                    ite = self.econml_estimator.effect(T0=0, T1=1, X=w_i).item()
-                    
-                    # Estimate baseline (we'll use the observed outcome mean as approximation)
-                    baseline = self.y.mean() if hasattr(self.y, 'mean') else np.mean(self.y)
-                    
-                    # Calculate potential outcomes
-                    y0_pred[i] = baseline - (ite * 0.5)  # Approximate control outcome
-                    y1_pred[i] = baseline + (ite * 0.5)  # Approximate treatment outcome
+            if not hasattr(self.econml_estimator, 'effect'):
+                raise AttributeError('Underlying EconML estimator does not expose effect()')
+
+            ite = np.asarray(self.econml_estimator.effect(T0=0, T1=1, X=w)).reshape(-1)
+            baseline = self.y.mean() if hasattr(self.y, 'mean') else np.mean(self.y)
+
+            y0_pred = baseline - (ite * 0.5)  # Approximate control outcome
+            y1_pred = baseline + (ite * 0.5)  # Approximate treatment outcome
             
             # Return the appropriate outcome based on treatment assignment
             predictions = np.where(t == 0, y0_pred, y1_pred)
