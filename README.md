@@ -2,7 +2,7 @@
 
 This repository implements and evaluates **Casual Decision Variants (CDVs)** - a novel approach for improving causal inference in business processes by partitioning data based on process behavior patterns.
 
-It is **not a fork or extension of [RealCause](https://github.com/bradyneal/realcause)**. Instead, RealCause is vendored in as a dependency/tool that is used to build a realistic, semi-synthetic benchmark for the Sepsis experiment track (fitting a generative model to real event-log data so that ground-truth causal effects are known). The synthetic experiment track is fully independent of RealCause: it uses its own data-generating process (`cdv_utils/synthetic_dgp.py`) with no RealCause models involved.
+It is **not an extension of [RealCause](https://github.com/bradyneal/realcause)**. Instead, RealCause is vendored in as a dependency/tool that is used to build a realistic, semi-synthetic benchmark for the Sepsis experiment track (fitting a generative model to real event-log data so that ground-truth causal effects are known). The synthetic experiment track is fully independent of RealCause: it uses its own data-generating process (`cdv_utils/synthetic_dgp.py`) with no RealCause models involved.
 
 Beyond the CDV method implementation itself, this repository also contains the experiment code, generated artifacts, and results (tables, figures, and raw outputs) produced when applying CDVs to both tracks.
 
