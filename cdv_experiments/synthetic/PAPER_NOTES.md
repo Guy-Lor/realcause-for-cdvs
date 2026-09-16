@@ -126,9 +126,7 @@ where a small number of dominant missingness patterns cover the large
 majority of cases (see `cdv_experiments/sepsis/PAPER_NOTES.md`, point 3).
 It also deliberately stress-tests CDV-Separate: even with a large total
 `N_TRAIN` (7,000), the minority "other"-bucket-adjacent variants receive only
-a few hundred training cases each, which is the same
-post-fragmentation-sample-size mechanism discussed for Sepsis (see
-`cdv_experiments/sepsis/PAPER_NOTES.md`, point 7) — it lets the synthetic
+a few hundred training cases each- it lets the synthetic
 experiment illustrate both the benefit of CDV separation (when local sample
 size is adequate) and its limits (when a variant is too small).
 
@@ -141,7 +139,7 @@ fully synthetic DGP with known ground truth.
 
 ---
 
-### 3. Synthetic ATE MSE Results (referenced from main text)
+### 3. Synthetic ATE MSE Results
 
 The main text reports CATE MSE (Section 6) and points here for the
 companion ATE MSE results, computed on the same 20 seeds ×
