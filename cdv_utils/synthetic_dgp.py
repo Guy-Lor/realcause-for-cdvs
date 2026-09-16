@@ -11,7 +11,7 @@ This module provides a fully controlled DGP with:
 - SG0 latent mechanisms share one propensity function of the observed history, so
   treatment assignment is independent of the latent mechanism conditional on S
 - A heterogeneity parameter alpha in [0, 1] that controls how different the variants are
-- Known ground-truth CATE for every case
+- Known individual effects and an observed-history CATE helper
 
 At alpha=0: all variants share the same treatment effect (homogeneous)
 At alpha=1: variants have genuinely different causal mechanisms (heterogeneous)
@@ -209,6 +209,73 @@ def _treatment_effect_for_subgroup(subgroup_id, alpha, X1, X2, features, structu
         delta = 2.2 * features['V'] - 1.8 * features['Z1'] + 2.0 * features['Z2']
     
     return TAU_BASE + alpha * delta
+
+
+def observed_history_cate(w, alpha, w_cols=None, sg0_structural_shares=None):
+    """Return E[Y(1)-Y(0) | observed W] for this synthetic DGP.
+
+    SG0a/SG0b are latent: average their effects using P(G | W), rather than
+    the sampled mechanism label or its individual treatment effect.
+    """
+    columns = list(ALL_W_COLS if w_cols is None else w_cols)
+    if len(columns) != len(ALL_W_COLS) or set(columns) != set(ALL_W_COLS):
+        raise ValueError("w_cols must contain exactly the six DGP feature columns.")
+    values = w[columns].to_numpy(dtype=float) if isinstance(w, pd.DataFrame) else np.asarray(w, dtype=float)
+    if values.ndim != 2 or values.shape[1] != len(columns):
+        raise ValueError("w must have shape (n_cases, len(w_cols)).")
+    if not np.isfinite(values).all():
+        raise ValueError("Use the DGP sentinel for absent features; W must be finite.")
+    if np.any((values != MISSING_VALUE) & (values < 0)):
+        raise ValueError("Present features must be nonnegative under this DGP.")
+    if not 0.0 <= alpha <= 1.0:
+        raise ValueError("alpha must be in [0, 1].")
+
+    shares = np.asarray(DEFAULT_SG0_STRUCTURAL_SHARES if sg0_structural_shares is None
+                        else sg0_structural_shares, dtype=float)
+    if (shares.shape != (2,) or not np.isfinite(shares).all()
+            or np.any(shares < 0) or not np.isclose(shares.sum(), 1.0, atol=1e-6, rtol=0)):
+        raise ValueError("SG0 shares must be two nonnegative probabilities summing to 1.")
+
+    feature = {name: values[:, columns.index(name)] for name in ALL_W_COLS}
+    present = np.column_stack([feature[name] != MISSING_VALUE for name in ALL_W_COLS])
+    result = np.empty(len(values), dtype=float)
+    matched = np.zeros(len(values), dtype=bool)
+
+    def folded_normal_logpdf(x, mean, sd):
+        # Density of abs(N(mean, sd**2)), including both preimages of x.
+        return (np.logaddexp(-0.5 * ((x - mean) / sd) ** 2,
+                             -0.5 * ((-x - mean) / sd) ** 2)
+                - np.log(sd) - 0.5 * np.log(2.0 * np.pi))
+
+    for subgroup_id, observed_columns in SUBGROUP_FEATURES.items():
+        schema = np.array([name in observed_columns for name in ALL_W_COLS])
+        mask = np.all(present == schema, axis=1)
+        if not mask.any():
+            continue
+        matched |= mask
+        x1, x2 = feature['X1'][mask], feature['X2'][mask]
+        features = {name: feature[name][mask] for name in observed_columns}
+        if subgroup_id != 0:
+            result[mask] = _treatment_effect_for_subgroup(subgroup_id, alpha, x1, x2, features)
+            continue
+
+        v, z1 = features['V'], features['Z1']
+        log_a = (folded_normal_logpdf(v, 0.9 * x1 + 0.6 * x2, 1.0)
+                 + folded_normal_logpdf(z1, 0.7 * v + 0.2 * x1 + 0.5, 0.7))
+        log_b = (folded_normal_logpdf(z1, 0.8 * x1 + 1.1 * x2 + 0.5, 0.7)
+                 + folded_normal_logpdf(v, 0.6 * z1 + 0.4 * x2 + 0.2, 0.8))
+        with np.errstate(divide='ignore'):
+            log_a += np.log(shares[0])
+            log_b += np.log(shares[1])
+        normalizer = np.logaddexp(log_a, log_b)
+        weight_a, weight_b = np.exp(log_a - normalizer), np.exp(log_b - normalizer)
+        tau_a = _treatment_effect_for_subgroup(0, alpha, x1, x2, features, 'SG0a')
+        tau_b = _treatment_effect_for_subgroup(0, alpha, x1, x2, features, 'SG0b')
+        result[mask] = weight_a * tau_a + weight_b * tau_b
+
+    if not matched.all():
+        raise ValueError("W contains an availability pattern outside this synthetic DGP.")
+    return result
 
 
 def generate_synthetic_dataset(n, alpha, seed, variant_shares=None, sg0_structural_shares=None):

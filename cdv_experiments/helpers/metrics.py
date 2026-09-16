@@ -467,6 +467,7 @@ def build_paper_summary_table(
     sided: str = "two-sided",
     decimals: int = 4,
     adjust_method: str = None,
+    metric_families: dict = None,
 ) -> pd.DataFrame:
     """
     Paper-ready summary table with a 2-level row index (Metric, Method) and
@@ -477,15 +478,17 @@ def build_paper_summary_table(
     − method CI/significance (see `paired_ci`, `significance_stars`).
 
     If `adjust_method` is set ('fdr_bh' or 'holm'), 'Sig.' uses p-values
-    adjusted for multiplicity across all (metric, method) comparisons in this
-    table (see `adjust_pvalues`) instead of the raw per-comparison p-value.
+    adjusted separately within each metric family. With metric_families=None,
+    all metrics share one family (previous behavior); with metric_families={},
+    each metric has its own family of method comparisons. Named mappings pool
+    metrics that share a family label.
     """
     metric_labels = metric_labels or {m: m for m in metrics}
     method_labels = method_labels or {m: m for m in METHODS_ORDER}
     lower_is_better = lower_is_better if lower_is_better is not None else {m: True for m in metrics}
 
     rows, index_tuples = [], []
-    flat_p, flat_idx = [], []
+    entries = []
     for metric in metrics:
         alt = resolve_alternative(sided, lower_is_better=lower_is_better[metric])
 
@@ -515,10 +518,10 @@ def build_paper_summary_table(
                 "Sig.": ci["p_value"],
             })
             if np.isfinite(ci["p_value"]):
-                flat_p.append(ci["p_value"])
-                flat_idx.append(len(rows) - 1)
+                family = metric_families.get(metric, metric) if metric_families is not None else "ALL"
+                entries.append((len(rows) - 1, ci["p_value"], family))
 
-    p_used = dict(zip(flat_idx, adjust_pvalues(flat_p, method=adjust_method) if adjust_method else flat_p))
+    p_used = _adjust_pvalues_by_family(entries, method=adjust_method)
     for i, row in enumerate(rows):
         if row["Sig."] != "-":
             row["Sig."] = significance_stars(p_used.get(i, row["Sig."]))

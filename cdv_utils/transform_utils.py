@@ -32,7 +32,7 @@ def prepare_realcause_dataset(df_sepsis_extended, outcome_column='cycle_time',
     # Define metadata columns to exclude from features
     metadata = ['case_id', 'admission_decision', 'admission_ts',
                 'pre_admission_sequence', 'pre_admission_variables',
-                'pre_admission_activities', 'cycle_time']
+                'pre_admission_activities', 'cycle_time', 'post_admission_cycle_time']
     
     # Get feature column names (exclude metadata)
     feature_names = list(df_sepsis_extended.columns[~df_sepsis_extended.columns.isin(metadata)])

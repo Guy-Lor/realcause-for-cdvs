@@ -8,6 +8,9 @@ focusing on pre-admission variables and measurements.
 import pandas as pd
 import numpy as np
 
+# Discharge activities that conclude the admission episode (vs. a later, unrelated 'Return ER').
+RELEASE_ACTS = ['Release A', 'Release B', 'Release C', 'Release D', 'Release E']
+
 
 def extract_pre_admission_variables_with_values(df):
     """
@@ -72,7 +75,7 @@ def extract_pre_admission_variables_with_values(df):
 
 def extract_pre_admission_features(df, df_sepsis):
     """
-    Extract all features from events before admission timestamp for each case_id.
+    Extract pre-admission covariates and full-trace cycle time for each case_id.
     If multiple values exist for a column, create numbered columns (_2, _3, etc.)
     
     Parameters:
@@ -100,9 +103,23 @@ def extract_pre_admission_features(df, df_sepsis):
         admission_ts = df_sepsis.loc[df_sepsis['case_id'] == case_id, 'admission_ts'].iloc[0] \
                         if not df_sepsis.loc[df_sepsis['case_id'] == case_id, 'admission_ts'].isna().iloc[0] else None
         
-        # Get all events for this case
+        # Compute the outcome from the full trace before restricting covariates.
         case_events = df[df['case_id'] == case_id]
-        
+        if not case_events.empty:
+            result_df.at[case_id, 'cycle_time'] = (
+                case_events['ts'].max() - case_events['ts'].min()
+            ).total_seconds()
+
+        # Tighter outcome: admission decision -> first discharge, excluding later unrelated Return ER episodes.
+        if admission_ts is not None:
+            post_admission_releases = case_events[
+                case_events['act'].isin(RELEASE_ACTS) & (case_events['ts'] >= admission_ts)
+            ]
+            if not post_admission_releases.empty:
+                result_df.at[case_id, 'post_admission_cycle_time'] = (
+                    post_admission_releases['ts'].min() - admission_ts
+                ).total_seconds()
+
         # If admission timestamp exists, filter events before admission
         if admission_ts is not None:
             case_events = case_events[case_events['ts'] < admission_ts]
@@ -128,10 +145,6 @@ def extract_pre_admission_features(df, df_sepsis):
                     # Store the value
                     result_df.at[case_id, col_name] = row[col]
         
-        # Calculate cycle time before admission
-        if not case_events.empty:
-            cycle_time = (case_events['ts'].max() - case_events['ts'].min()).total_seconds()
-            result_df.at[case_id, 'cycle_time'] = cycle_time
     
     # Reset index to get case_id as a column
     result_df = result_df.reset_index().rename(columns={'index': 'case_id'})

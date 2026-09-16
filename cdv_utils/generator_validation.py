@@ -413,7 +413,8 @@ def estimate_sigmoid_flow_cate(model, w_untransformed, n_quantiles=128,
     RealCause's ``SigmoidFlow.mean`` is not implemented, so a single sampled
     potential-outcome contrast is not a valid CATE target.  This helper
     integrates both fitted potential-outcome distributions over a fixed
-    midpoint quantile grid and returns ``E[Y(1)|X] - E[Y(0)|X]`` on the original
+    midpoint quantile grid, applying the sampler's outcome bounds before
+    averaging, and returns ``E[Y(1)|X] - E[Y(0)|X]`` on the original
     outcome scale.
     """
     from models.distributions.flows import sigmoid_flow_inverse
@@ -494,10 +495,14 @@ def estimate_sigmoid_flow_cate(model, w_untransformed, n_quantiles=128,
                 max_iter=100,
                 lr=0.1,
             )
+            # Match the bounds applied by model._sample_y, on its internal scale.
+            sample_values = samples.detach().cpu().numpy()
+            if model.outcome_min is not None or model.outcome_max is not None:
+                sample_values = np.clip(
+                    sample_values, model.outcome_min, model.outcome_max
+                )
             means.append(
-                samples.detach().cpu().numpy()
-                .reshape(batch_size, n_quantiles, output_dim)
-                .mean(axis=1)
+                sample_values.reshape(batch_size, n_quantiles, output_dim).mean(axis=1)
             )
         return np.concatenate(means, axis=0)
 

@@ -495,7 +495,7 @@ def _run_seed_core(
     Core per-seed logic shared by Sepsis and Synthetic runners.
 
     Assumes df_train and df_test already contain columns: w_cols, t, y
-    and optionally 'ite' (for synthetic, where true CATE is exact).
+    and optionally 'ite' (a fallback target when true_cate_fn is not supplied).
     """
     print(f"\n[Seed {outer_seed}] Starting core runner...")
 
@@ -759,11 +759,11 @@ def run_single_seed_synthetic(
     Run one outer seed of the revised Synthetic experiment.
 
     Generates FRESH train and test datasets from the DGP per seed.
-    true_cate is taken from df['ite'] (exact DGP counterfactuals).
+    true_cate_fn computes the pooled CATE conditional on observed features.
     """
     import sys, os
     sys.path.insert(0, _PROJECT_ROOT)
-    from cdv_utils.synthetic_dgp import generate_synthetic_dataset
+    from cdv_utils.synthetic_dgp import generate_synthetic_dataset, observed_history_cate
 
     seeds = derive_seeds(outer_seed)
 
@@ -782,8 +782,11 @@ def run_single_seed_synthetic(
     # so their reset indices would otherwise both start at 0 and collide.
     df_test.index = df_test.index + len(df_train)
 
-    # For synthetic, true_cate_fn = None → runner uses df['ite'] directly
-    return _run_seed_core(outer_seed, config, df_train, df_test, w_cols, None, seeds)
+    # The generator's ite remains the individual effect; it is not the score target.
+    def true_cate_fn(w_array):
+        return observed_history_cate(w_array, alpha=alpha, w_cols=w_cols)
+
+    return _run_seed_core(outer_seed, config, df_train, df_test, w_cols, true_cate_fn, seeds)
 
 
 # ============================================================
