@@ -85,12 +85,12 @@ assignment.
 The overlap check has two components (**A** and **B**).  A CDV must pass
 **both** to be retained.
 
-### `OVERLAP_LO` / `OVERLAP_HI` (default: 0.10 / 0.90)
+### `OVERLAP LO` / `OVERLAP HI` (default: 0.10 / 0.90)
 
 Defines the overlap interval $[\text{lo}, \text{hi}]$.
 
 **Option A** (group-level): the mean treatment rate within the CDV must be
-inside $[\text{OVERLAP\_LO}, \text{OVERLAP\_HI}]$.
+inside $[\text{OVERLAP LO}, \text{OVERLAP HI}]$.
 
 **Option B** (individual-level): the fraction of CDV training cases whose
 estimated propensity $\hat{p}(T=1|W)$ falls inside $[\text{lo}, \text{hi}]$
@@ -105,7 +105,7 @@ must be ≥ `OVERLAP_MIN_FRACTION`.
 ### `OVERLAP_MIN_FRACTION` (default: 0.70)
 
 Minimum fraction of a CDV's training cases that must individually have
-$\hat{p}$ inside $[\text{OVERLAP\_LO}, \text{OVERLAP\_HI}]$.
+$\hat{p}$ inside $[\text{OVERLAP LO}, \text{OVERLAP HI}]$.
 
 | Value | Effect |
 |-------|--------|
